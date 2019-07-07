@@ -277,7 +277,7 @@ update_file (ChangeSetDirent *dent,
              SeafStat *st,
              const char *modifier)
 {
-    if (!sha1 || !st || !S_ISREG(st->st_mode))
+    if (!sha1 || !st || !S_ISREGORLNK(st->st_mode))
         return;
     dent->mode = create_ce_mode(st->st_mode);
     dent->mtime = (gint64)st->st_mtime;
@@ -400,7 +400,7 @@ add_to_tree (ChangeSet *changeset,
                     seaf_dir_free (seaf_dir);
                 }
                 dir = dent->subdir;
-            } else if (S_ISREG(dent->mode)) {
+            } else if (S_ISREGORLNK(dent->mode)) {
                 if (i == (n-1)) {
                     /* File exists, update it. */
                     update_file (dent, sha1, st, modifier);
@@ -488,7 +488,7 @@ delete_from_tree (ChangeSet *changeset,
                 seaf_dir_free (seaf_dir);
             }
             dir = dent->subdir;
-        } else if (S_ISREG(dent->mode)) {
+        } else if (S_ISREGORLNK(dent->mode)) {
             if (i == (n-1)) {
                 /* Remove from hash table without freeing dent. */
                 remove_dent_from_dir (dir, dname);
@@ -705,7 +705,7 @@ changeset_check_path (ChangeSet *changeset,
                 break;
             }
             dir = dent->subdir;
-        } else if (S_ISREG(dent->mode)) {
+        } else if (S_ISREGORLNK(dent->mode)) {
             if (i == (n-1)) {
                 if (dent->mode != mode) {
                     seaf_message ("Changeset mismatch: %s mode mismatch, "

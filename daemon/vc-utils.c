@@ -400,7 +400,7 @@ delete_path (const char *worktree, const char *name,
 
     if (!S_ISDIR(mode)) {
         /* file doesn't exist in work tree */
-        if (seaf_stat (path, &st) < 0 || !S_ISREG(st.st_mode)) {
+        if (seaf_stat (path, &st) < 0 || !S_ISREGORLNK(st.st_mode)) {
             return 0;
         }
 

@@ -1432,7 +1432,7 @@ add_dir_recursive (const char *path, const char *full_path, SeafStat *st,
 #endif
         full_subpath = g_build_filename (params->worktree, subpath, NULL);
 
-        if (stat (full_subpath, &sub_st) < 0) {
+        if (lstat (full_subpath, &sub_st) < 0) {
             seaf_warning ("Failed to stat %s: %s.\n", full_subpath, strerror(errno));
             g_free (subpath);
             g_free (full_subpath);
@@ -1459,7 +1459,7 @@ add_dir_recursive (const char *path, const char *full_path, SeafStat *st,
 
         if (S_ISDIR(sub_st.st_mode))
             add_dir_recursive (subpath, full_subpath, &sub_st, params, FALSE);
-        else if (S_ISREG(sub_st.st_mode))
+        else if (S_ISREGORLNK(sub_st.st_mode))
             add_file (params->repo_id,
                       params->version,
                       params->modifier,
@@ -1552,11 +1552,6 @@ add_recursive (const char *repo_id,
 
     full_path = g_build_path (PATH_SEPERATOR, worktree, path, NULL);
     if (seaf_stat (full_path, &st) < 0) {
-        /* Ignore broken symlinks on Linux and Mac OS X */
-        if (lstat (full_path, &st) == 0 && S_ISLNK(st.st_mode)) {
-            g_free (full_path);
-            return 0;
-        }
         seaf_warning ("Failed to stat %s.\n", full_path);
         g_free (full_path);
         /* Ignore error. */
@@ -1570,7 +1565,7 @@ add_recursive (const char *repo_id,
         return 0;
     }
 
-    if (S_ISREG(st.st_mode)) {
+    if (S_ISREGORLNK(st.st_mode)) {
         add_file (repo_id,
                   version,
                   modifier,
@@ -1819,7 +1814,7 @@ add_recursive (const char *repo_id,
         return 0;
     }
 
-    if (S_ISREG(st.st_mode)) {
+    if (S_ISREGORLNK(st.st_mode)) {
         ret = add_file (repo_id,
                         version,
                         modifier,
@@ -1996,7 +1991,7 @@ remove_deleted (struct index_state *istate, const char *worktree, const char *pr
              * In this case we don't want to mistakenly remove the file
              * from the repo.
              */
-            if ((not_exist || (ret == 0 && !S_ISREG (st.st_mode))) &&
+            if ((not_exist || (ret == 0 && !S_ISREGORLNK (st.st_mode))) &&
                 (ce->ce_ctime.sec != 0 || ce_stage(ce) != 0) &&
                 check_locked_file_before_remove (fset, ce->name))
             {
@@ -2236,7 +2231,7 @@ add_remain_files (SeafRepo *repo, struct index_state *istate,
             continue;
         }
 
-        if (S_ISREG(st.st_mode)) {
+        if (S_ISREGORLNK(st.st_mode)) {
             gboolean added = FALSE;
             int ret = 0;
             ret = add_to_index (repo->id, repo->version, istate, path, full_path,
@@ -2987,7 +2982,7 @@ update_active_path_recursive (SeafRepo *repo,
         if (ignored || should_ignore(full_path, dname, ignore_list))
             ignore_sub = TRUE;
 
-        if (stat (full_sub_path, &st) < 0) {
+        if (lstat (full_sub_path, &st) < 0) {
             seaf_warning ("Failed to stat %s: %s.\n", full_sub_path, strerror(errno));
             g_free (dname);
             g_free (sub_path);
@@ -2998,7 +2993,7 @@ update_active_path_recursive (SeafRepo *repo,
         if (S_ISDIR(st.st_mode)) {
             update_active_path_recursive (repo, sub_path, istate, ignore_list,
                                           ignore_sub);
-        } else if (S_ISREG(st.st_mode)) {
+        } else if (S_ISREGORLNK(st.st_mode)) {
             update_active_file (repo, sub_path, &st, istate,
                                 ignore_sub);
         }
@@ -3060,7 +3055,7 @@ process_active_path (SeafRepo *repo, const char *path,
     if (check_full_path_ignore (repo->worktree, path, ignore_list))
         ignored = TRUE;
 
-    if (S_ISREG(st.st_mode)) {
+    if (S_ISREGORLNK(st.st_mode)) {
         if (!seaf_filelock_manager_is_file_locked(seaf->filelock_mgr,
                                                   repo->id, path)) {
             update_active_file (repo, path, &st, istate, ignored);
@@ -3475,7 +3470,7 @@ do_lock_office_file (LockOfficeJob *job)
         return;
 
     fullpath = g_build_path ("/", repo->worktree, job->path, NULL);
-    if (seaf_stat (fullpath, &st) < 0 || !S_ISREG(st.st_mode)) {
+    if (seaf_stat (fullpath, &st) < 0 || !S_ISREGORLNK(st.st_mode)) {
         g_free (fullpath);
         return;
     }
@@ -3516,7 +3511,7 @@ do_unlock_office_file (LockOfficeJob *job)
         return;
 
     fullpath = g_build_path ("/", repo->worktree, job->path, NULL);
-    if (seaf_stat (fullpath, &st) < 0 || !S_ISREG(st.st_mode)) {
+    if (seaf_stat (fullpath, &st) < 0 || !S_ISREGORLNK(st.st_mode)) {
         g_free (fullpath);
         return;
     }
@@ -4223,7 +4218,7 @@ cache_entry_from_diff_entry (DiffEntry *de)
     ce->ce_size = de->size;
     ce->ce_mtime.sec = de->mtime;
 
-    if (S_ISREG(de->mode))
+    if (S_ISREGORLNK(de->mode))
         ce->ce_mode = create_ce_mode (de->mode);
     else
         ce->ce_mode = S_IFDIR;
@@ -4281,7 +4276,7 @@ fetch_file_http (FileTxData *data, FileTxTask *file_task)
 
     path_exists = (seaf_stat (path, &st) == 0);
 
-    if (path_exists && S_ISREG(st.st_mode)) {
+    if (path_exists && S_ISREGORLNK(st.st_mode)) {
         if (st.st_mtime == ce->ce_mtime.sec) {
             /* Worktree and index are consistent. */
             if (memcmp (de->sha1, ce->sha1, 20) == 0) {
@@ -4553,7 +4548,7 @@ checkout_file_http (FileTxData *data,
 
     /* The worktree file may have been changed when we're downloading the blocks. */
     if (!file_task->new_ce &&
-        path_exists && S_ISREG(st.st_mode) &&
+        path_exists && S_ISREGORLNK(st.st_mode) &&
         !force_conflict) {
         if (st.st_mtime != ce->ce_mtime.sec) {
             seaf_message ("File %s is updated by user. "
@@ -4571,6 +4566,7 @@ checkout_file_http (FileTxData *data,
 
     /* then checkout the file. */
     gboolean conflicted = FALSE;
+
     if (seaf_fs_manager_checkout_file (seaf->fs_mgr,
                                        repo_id,
                                        repo_version,
@@ -4851,7 +4847,7 @@ expand_dir_added_cb (SeafFSManager *mgr,
 
     if (S_ISDIR(dent->mode) && strcmp(dent->id, EMPTY_SHA1) == 0)
         de = diff_entry_new (DIFF_TYPE_COMMITS, DIFF_STATUS_DIR_ADDED, sha1, path);
-    else if (S_ISREG(dent->mode))
+    else if (S_ISREGORLNK(dent->mode))
         de = diff_entry_new (DIFF_TYPE_COMMITS, DIFF_STATUS_ADDED, sha1, path);
 
     if (de) {
@@ -5412,6 +5408,7 @@ seaf_repo_fetch_and_checkout (HttpTxTask *http_task, const char *remote_head_id)
 
     for (ptr = results; ptr; ptr = ptr->next) {
         de = ptr->data;
+
         if (de->status == DIFF_STATUS_DELETED) {
             seaf_debug ("Delete file %s.\n", de->name);
 
@@ -7092,7 +7089,7 @@ GList *seaf_repo_load_ignore_files (const char *worktree)
                               IGNORE_FILE, NULL);
     if (seaf_stat (full_path, &st) < 0)
         goto error;
-    if (!S_ISREG(st.st_mode))
+    if (!S_ISREGORLNK(st.st_mode))
         goto error;
     fp = g_fopen(full_path, "r");
     if (fp == NULL)

@@ -7,6 +7,10 @@
  #include <config.h>
 #endif
 
+#ifndef WIN32
+#define _GNU_SOURCE
+#endif
+
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdint.h>             /* uint32_t */
@@ -38,6 +42,8 @@
 #define BLOCK_PROTOCOL_SIGNATURE "529319a0-577f-4d6b-a6c3-3c20f56f290c"
 
 #define SEAF_PATH_MAX 4096
+
+#define S_ISREGORLNK(mode) (S_ISREG(mode) || S_ISLNK(mode))
 
 #ifndef ccnet_warning
 #define ccnet_warning(fmt, ...) g_warning("%s(%d): " fmt, __FILE__, __LINE__, ##__VA_ARGS__)

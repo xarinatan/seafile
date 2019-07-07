@@ -28,8 +28,8 @@
 #ifndef WIN32
 #include <pwd.h>
 #include <uuid/uuid.h>
+#include <sys/mman.h>
 #endif
-
 #include <unistd.h>
 #include <sys/types.h>
 #include <fcntl.h>
@@ -39,14 +39,11 @@
 #include <limits.h>
 #include <stdarg.h>
 #include <string.h>
-
 #include <glib.h>
 #include <glib/gstdio.h>
 #include <searpc-utils.h>
 
 #include <jansson.h>
-
-#include <utime.h>
 
 #include <zlib.h>
 
@@ -400,7 +397,13 @@ out:
 
     return ret;
 #else
-    return stat (path, st);
+    int ret = lstat (path, st);
+
+    /* Pretend it's a normal file with access mode = 0777. */
+    if (S_ISLNK(st->st_mode))
+        st->st_mode = 0777 | S_IFREG;
+
+    return ret;
 #endif
 }
 
@@ -446,17 +449,18 @@ seaf_set_file_time (const char *path, guint64 mtime)
 {
 #ifndef WIN32
     struct stat st;
-    struct utimbuf times;
+    struct timespec times[2];
 
-    if (stat (path, &st) < 0) {
+    if (lstat (path, &st) < 0) {
         g_warning ("Failed to stat %s: %s.\n", path, strerror(errno));
         return -1;
     }
 
-    times.actime = st.st_atime;
-    times.modtime = (time_t)mtime;
+    times[0] = st.st_atim;
+    times[1].tv_sec = mtime;
+    times[1].tv_nsec = 0;
 
-    return utime (path, &times);
+    return utimensat (AT_FDCWD, path, times, AT_SYMLINK_NOFOLLOW);
 #else
     wchar_t *wpath = win32_long_path (path);
     int ret = 0;
@@ -559,7 +563,29 @@ seaf_util_open (const char *path, int flags)
     g_free (wpath);
     return fd;
 #else
-    return open (path, flags);
+    int fd = open (path, flags | O_NOFOLLOW);
+
+    if (fd >= 0 || errno != ELOOP)
+        return fd;
+
+    // An ELOOP error occurred, that should only happen when path was a symlink.
+    // We create an anonymous file that contains the target of the link.
+    char target[SEAF_PATH_MAX];
+    int len = readlink (path, target, SEAF_PATH_MAX);
+
+    if (len < 0)
+        return -1;
+    fd = memfd_create ("symlink", 0);
+    if (fd < 0)
+        return -1;
+    if (write (fd, target, len) != len) {
+        close (fd);
+        return -1;
+    }
+    lseek(fd, 0, SEEK_SET);
+    target[len] = 0;
+
+    return fd;
 #endif
 }
 
@@ -635,7 +661,9 @@ seaf_util_exists (const char *path)
     g_free (wpath);
     return ret;
 #else
-    return (access (path, F_OK) == 0);
+    SeafStat st;
+
+    return (access (path, F_OK) == 0 || lstat (path, &st) == 0);
 #endif
 }
 
@@ -1127,7 +1155,7 @@ ccnet_expand_path (const char *src)
         struct passwd *pw = NULL;
 
         for ( ; *next_in != '/' && *next_in != '\0'; next_in++) ;
-        
+
         len = next_in - src;
         if (len == 1) {
             pw = getpwuid (geteuid());
@@ -1139,7 +1167,7 @@ ccnet_expand_path (const char *src)
         }
         if (pw == NULL)
             return NULL;
-       
+
         len = strlen (pw->pw_dir);
         memcpy (new_path, pw->pw_dir, len);
         next_out = new_path + len;
@@ -1151,14 +1179,14 @@ ccnet_expand_path (const char *src)
         getcwd (new_path, SEAF_PATH_MAX);
         for ( ; *next_out; next_out++) ; /* to '\0' */
     }
-    
+
     while (*next_in != '\0') {
         /* move ntoken to the next not '/' char  */
         for (ntoken = next_in; *ntoken == '/'; ntoken++) ;
 
-        for (next_in = ntoken; *next_in != '/' 
+        for (next_in = ntoken; *next_in != '/'
                  && *next_in != '\0'; next_in++) ;
- 
+
         len = next_in - ntoken;
 
         if (len == 0) {
@@ -1168,7 +1196,7 @@ ccnet_expand_path (const char *src)
             break;
         }
 
-        if (len == 2 && ntoken[0] == '.' && ntoken[1] == '.') 
+        if (len == 2 && ntoken[0] == '.' && ntoken[1] == '.')
         {
             /* '..' */
             for (; next_out > new_path && *next_out != '/'; next_out--)
@@ -1203,7 +1231,7 @@ calculate_sha1 (unsigned char *sha1, const char *msg, int len)
         len = strlen(msg);
 
     c = g_checksum_new (G_CHECKSUM_SHA1);
-    g_checksum_update(c, (const unsigned char *)msg, len);    
+    g_checksum_update(c, (const unsigned char *)msg, len);
     g_checksum_get_digest (c, sha1, &cs_len);
     g_checksum_free (c);
     return 0;
@@ -1234,7 +1262,7 @@ ccnet_sha1_equal (const void *v1,
     for (i = 0; i < 20; i++)
         if (p1[i] != p2[i])
             return 0;
-    
+
     return 1;
 }
 
@@ -1338,7 +1366,7 @@ char** strsplit_by_space (char *string, int *length)
     char *remainder, *s;
     int size = 8, num = 0, done = 0;
     char **array;
-    
+
     if (string == NULL || string[0] == '\0') {
         if (length != NULL) {
           *length = 0;
@@ -1350,7 +1378,7 @@ char** strsplit_by_space (char *string, int *length)
     if (array == NULL) {
       return NULL;
     }
-    
+
     remainder = string;
     while (!done) {
         for (s = remainder; *s != ' ' && *s != '\0'; ++s) ;
@@ -1373,7 +1401,7 @@ char** strsplit_by_space (char *string, int *length)
 
         remainder = s + 1;
     }
-    
+
     if (length != NULL) {
       *length = num;
     }
@@ -1386,7 +1414,7 @@ char** strsplit_by_char (char *string, int *length, char c)
     char *remainder, *s;
     int size = 8, num = 0, done = 0;
     char **array;
-    
+
     if (string == NULL || string[0] == '\0') {
         *length = 0;
         return NULL;
@@ -1396,7 +1424,7 @@ char** strsplit_by_char (char *string, int *length, char c)
     if (array == NULL) {
       return NULL;
     }
-    
+
     remainder = string;
     while (!done) {
         for (s = remainder; *s != c && *s != '\0'; ++s) ;
@@ -1419,7 +1447,7 @@ char** strsplit_by_char (char *string, int *length, char c)
 
         remainder = s + 1;
     }
-    
+
     if (length != NULL) {
       *length = num;
     }
@@ -1435,7 +1463,7 @@ char* strjoin_n (const char *seperator, int argc, char **argv)
 
     if (argc == 0)
         return NULL;
-    
+
     buf = g_string_new (argv[0]);
     for (i = 1; i < argc; ++i) {
         g_string_append (buf, seperator);
@@ -1457,7 +1485,7 @@ gboolean is_ipaddr_valid (const char *ip)
 
     if (evutil_inet_pton(AF_INET6, ip, buf) == 1)
         return TRUE;
-    
+
     return FALSE;
 }
 
@@ -1475,7 +1503,7 @@ void parse_key_value_pairs (char *string, KeyValueFunc func, void *data)
 
         for (next = line; *next != '\n' && *next; ++next) ;
         *next = '\0';
-        
+
         for (space = line; space < next && *space != ' '; ++space) ;
         if (*space != ' ') {
             g_warning ("Bad key value format: %s\n", line);
@@ -1484,7 +1512,7 @@ void parse_key_value_pairs (char *string, KeyValueFunc func, void *data)
         *space = '\0';
         key = line;
         value = space + 1;
-        
+
         func (data, key, value);
 
         line = next + 1;
@@ -1505,7 +1533,7 @@ void parse_key_value_pairs2 (char *string, KeyValueFunc2 func, void *data)
 
         for (next = line; *next != '\n' && *next; ++next) ;
         *next = '\0';
-        
+
         for (space = line; space < next && *space != ' '; ++space) ;
         if (*space != ' ') {
             g_warning ("Bad key value format: %s\n", line);
@@ -1514,7 +1542,7 @@ void parse_key_value_pairs2 (char *string, KeyValueFunc2 func, void *data)
         *space = '\0';
         key = line;
         value = space + 1;
-        
+
         if (func(data, key, value) == FALSE)
             break;
 
@@ -1525,7 +1553,7 @@ void parse_key_value_pairs2 (char *string, KeyValueFunc2 func, void *data)
 /**
  * handle the empty string problem.
  */
-gchar* 
+gchar*
 ccnet_key_file_get_string (GKeyFile *keyf,
                            const char *category,
                            const char *key)
@@ -1546,7 +1574,7 @@ ccnet_key_file_get_string (GKeyFile *keyf,
 
 /**
  * string_list_is_exists:
- * @str_list: 
+ * @str_list:
  * @string: a C string or %NULL
  *
  * Check whether @string is in @str_list.
@@ -1566,7 +1594,7 @@ string_list_is_exists (GList *str_list, const char *string)
 
 /**
  * string_list_append:
- * @str_list: 
+ * @str_list:
  * @string: a C string (can't be %NULL
  *
  * Append @string to @str_list if it is in the list.
@@ -1660,7 +1688,7 @@ string_list_parse (const char *list_in_str, const char *seperator)
         list = g_list_prepend (list, g_strdup(*ptr));
     }
     list = g_list_reverse (list);
-    
+
     g_strfreev (array);
     return list;
 }
@@ -1804,9 +1832,9 @@ get_process_handle (const char *process_name_in)
         hProcess = OpenProcess (PROCESS_ALL_ACCESS, FALSE, aProcesses[i]);
         if (!hProcess)
             continue;
-            
+
         if (EnumProcessModules(hProcess, &hMod, sizeof(hMod), &cbNeeded)) {
-            GetModuleBaseName(hProcess, hMod, process_name, 
+            GetModuleBaseName(hProcess, hMod, process_name,
                               sizeof(process_name)/sizeof(char));
         }
 
@@ -1829,7 +1857,7 @@ int count_process (const char *process_name_in)
     HMODULE hMods[1024];
     int count = 0;
     int i, j;
-    
+
     if (strstr(process_name_in, ".exe")) {
         snprintf (name, sizeof(name), "%s", process_name_in);
     } else {
@@ -1850,7 +1878,7 @@ int count_process (const char *process_name_in)
         if (!hProcess) {
             continue;
         }
-            
+
         if (EnumProcessModules(hProcess, hMods, sizeof(hMods), &cbNeeded)) {
             for (j = 0; j < cbNeeded / sizeof(HMODULE); j++) {
                 if (GetModuleBaseName(hProcess, hMods[j], process_name,
@@ -1858,12 +1886,12 @@ int count_process (const char *process_name_in)
                     if (strcasecmp(process_name, name) == 0)
                         count++;
                 }
-            } 
+            }
         }
 
         CloseHandle(hProcess);
     }
-    
+
     return count;
 }
 
@@ -1908,7 +1936,7 @@ win32_spawn_process (char *cmdline_in, char *working_directory_in)
         g_warning ("failed to convert cmdline_in");
         return -1;
     }
-    
+
     if (working_directory_in) {
         working_directory_w = wchar_from_utf8 (working_directory_in);
         if (!working_directory_w) {
@@ -1931,14 +1959,14 @@ win32_spawn_process (char *cmdline_in, char *working_directory_in)
     si.hStdInput = (HANDLE) _get_osfhandle(0);
     si.hStdOutput = (HANDLE) _get_osfhandle(1);
     si.hStdError = (HANDLE) _get_osfhandle(2);
-    
+
     memset(&pi, 0, sizeof(pi));
 
     success = CreateProcessW (NULL, cmdline_w, NULL, NULL, TRUE, flags,
                               NULL, working_directory_w, &si, &pi);
     free (cmdline_w);
     if (working_directory_w) free (working_directory_w);
-    
+
     if (!success) {
         g_warning ("failed to fork_process: GLE=%lu\n", GetLastError());
         return -1;
@@ -2161,7 +2189,7 @@ win_stat64_utf8 (char *path_utf8, STAT_STRUCT *sb)
 
 #else
     #define STAT_STRUCT struct stat
-    #define STAT_FUNC stat
+    #define STAT_FUNC lstat
 #endif
 
 static gint64
@@ -2198,7 +2226,7 @@ calc_recursively (const char *path, GError **calc_error)
             }
             sum += size;
             g_free(full_path);
-        } else if (S_ISREG(sb.st_mode)) {
+        } else if (S_ISREGORLNK(sb.st_mode)) {
             sum += sb.st_size;
             g_free(full_path);
         }
@@ -2223,21 +2251,21 @@ char *
 strtok_r(char *s, const char *delim, char **save_ptr)
 {
     char *token;
-    
+
     if(s == NULL)
         s = *save_ptr;
-    
+
     /* Scan leading delimiters.  */
     s += strspn(s, delim);
     if(*s == '\0') {
         *save_ptr = s;
         return NULL;
     }
-    
+
     /* Find the end of the token.  */
     token = s;
     s = strpbrk(token, delim);
-    
+
     if(s == NULL) {
         /* This token finishes the string.  */
         *save_ptr = strchr(token, '\0');
@@ -2246,7 +2274,7 @@ strtok_r(char *s, const char *delim, char **save_ptr)
         *s = '\0';
         *save_ptr = s + 1;
     }
-    
+
     return token;
 }
 #endif

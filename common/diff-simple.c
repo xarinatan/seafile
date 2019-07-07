@@ -62,8 +62,10 @@ inline static gboolean
 dirent_same (SeafDirent *denta, SeafDirent *dentb)
 {
     return (strcmp (dentb->id, denta->id) == 0 &&
-	    denta->mode == dentb->mode &&
-	    denta->mtime == dentb->mtime);
+            ((S_ISREGORLNK (denta->mode) && S_ISREGORLNK (dentb->mode)) ||
+             (S_ISDIR (denta->mode) && S_ISDIR (dentb->mode))) &&
+	    (denta->mode & 0777) == (dentb->mode & 0777) &&
+             denta->mtime == dentb->mtime);
 }
 
 static int
@@ -74,7 +76,7 @@ diff_files (int n, SeafDirent *dents[], const char *basedir, DiffOptions *opt)
 
     memset (files, 0, sizeof(files[0])*n);
     for (i = 0; i < n; ++i) {
-        if (dents[i] && S_ISREG(dents[i]->mode)) {
+        if (dents[i] && S_ISREGORLNK(dents[i]->mode)) {
             files[i] = dents[i];
             ++n_files;
         }
@@ -599,7 +601,7 @@ diff_resolve_renames (GList **diff_entries)
             else
                 rename_status = DIFF_STATUS_RENAMED;
 
-            de_rename = diff_entry_new (de_del->type, rename_status, 
+            de_rename = diff_entry_new (de_del->type, rename_status,
                                         de_del->sha1, de_del->name);
             de_rename->new_name = g_strdup(de_add->name);
 

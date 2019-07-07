@@ -372,7 +372,7 @@ build_checkout_path (const char *worktree, const char *ce_name, int len)
 
         if (seaf_stat (path, &st) == 0 && S_ISDIR(st.st_mode))
             continue;
-        
+
         if (seaf_util_mkdir (path, 0777) < 0) {
             seaf_warning ("Failed to create directory %s.\n", path);
             return NULL;
@@ -400,7 +400,7 @@ delete_path (const char *worktree, const char *name,
 
     if (!S_ISDIR(mode)) {
         /* file doesn't exist in work tree */
-        if (seaf_stat (path, &st) < 0 || !S_ISREG(st.st_mode)) {
+        if (seaf_stat (path, &st) < 0 || !S_ISREGORLNK(st.st_mode)) {
             return 0;
         }
 

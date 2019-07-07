@@ -8,6 +8,7 @@
 
 #ifndef WIN32
     #include <arpa/inet.h>
+    #include <sys/mman.h>
 #endif
 
 #include <searpc-utils.h>
@@ -262,12 +263,21 @@ seaf_fs_manager_checkout_file (SeafFSManager *mgr,
 
     tmp_path = g_strconcat (file_path, SEAF_TMP_EXT, NULL);
 
-    mode_t rmode = mode & 0100 ? 0777 : 0666;
-    wfd = seaf_util_create (tmp_path, O_WRONLY | O_TRUNC | O_CREAT | O_BINARY,
-                            rmode & ~S_IFMT);
+    if ((mode & 0777) == 0777)
+        /* The file is in fact a symlink. */
+        mode = S_IFLNK;
+
+    if (S_ISREG (mode)) {
+        mode_t rmode = mode & 0100 ? 0777 : 0666;
+        wfd = seaf_util_create (tmp_path, O_WRONLY | O_TRUNC | O_CREAT | O_BINARY,
+                                rmode & ~S_IFMT);
+    } else {
+        wfd = memfd_create ("symlink", 0);
+    }
+
     if (wfd < 0) {
         seaf_warning ("Failed to open file %s for checkout: %s.\n",
-                   tmp_path, strerror(errno));
+                      tmp_path, strerror(errno));
         goto bad;
     }
 
@@ -277,11 +287,26 @@ seaf_fs_manager_checkout_file (SeafFSManager *mgr,
             goto bad;
     }
 
+    if (S_ISLNK (mode)) {
+        /* At this point, wfd is a memfd containing the target of the link. */
+        char target[SEAF_PATH_MAX + 1];
+        int len;
+
+        lseek(wfd, 0, SEEK_SET);
+        len = read (wfd, target, SEAF_PATH_MAX);
+        if (len >= 0)
+            target[len] = 0;
+        if (len < 0 || symlink (target, tmp_path) < 0) {
+            seaf_warning ("Failed to create symlink %s: %s.\n",
+                          tmp_path, strerror(errno));
+            goto bad;
+        }
+    }
+
     close (wfd);
     wfd = -1;
 
     /* Move existing file to backup file. */
-
     backup_path = g_strconcat (file_path, SEAF_BACKUP_EXT, NULL);
 
     if (seaf_util_exists (file_path) &&
@@ -368,7 +393,7 @@ seaf_fs_manager_checkout_file (SeafFSManager *mgr,
     }
 
     if (mtime > 0) {
-        /* 
+        /*
          * Set the checked out file mtime to what it has to be.
          */
         if (seaf_set_file_time (file_path, mtime) < 0) {
@@ -675,7 +700,7 @@ seaf_fs_manager_index_blocks (SeafFSManager *mgr,
         return -1;
     }
 
-    g_return_val_if_fail (S_ISREG(sb.st_mode), -1);
+    g_return_val_if_fail (S_ISREGORLNK(sb.st_mode), -1);
 
     if (sb.st_size == 0) {
         /* handle empty file. */
@@ -1117,7 +1142,7 @@ seaf_dirent_new (int version, const char *sha1, int mode, const char *name,
 
     if (version > 0) {
         dent->mtime = mtime;
-        if (S_ISREG(mode)) {
+        if (S_ISREGORLNK(mode)) {
             dent->modifier = g_strdup(modifier);
             dent->size = size;
         }
@@ -1126,7 +1151,7 @@ seaf_dirent_new (int version, const char *sha1, int mode, const char *name,
     return dent;
 }
 
-void 
+void
 seaf_dirent_free (SeafDirent *dent)
 {
     if (!dent)
@@ -1238,7 +1263,7 @@ parse_dirent (const char *dir_id, int version, json_t *object)
     }
 
     mtime = json_object_get_int_member (object, "mtime");
-    if (S_ISREG(mode)) {
+    if (S_ISREGORLNK(mode)) {
         modifier = json_object_get_string_member (object, "modifier");
         if (!modifier) {
             seaf_debug ("Dirent modifier not set for dir object %s.\n", dir_id);
@@ -1254,7 +1279,7 @@ parse_dirent (const char *dir_id, int version, json_t *object)
     dirent->name_len = strlen(name);
     dirent->name = g_strdup(name);
     dirent->mtime = mtime;
-    if (S_ISREG(mode)) {
+    if (S_ISREGORLNK(mode)) {
         dirent->modifier = g_strdup(modifier);
         dirent->size = size;
     }
@@ -1404,7 +1429,7 @@ add_to_dirent_array (json_t *array, SeafDirent *dirent)
     json_object_set_string_member (object, "id", dirent->id);
     json_object_set_string_member (object, "name", dirent->name);
     json_object_set_int_member (object, "mtime", dirent->mtime);
-    if (S_ISREG(dirent->mode)) {
+    if (S_ISREGORLNK(dirent->mode)) {
         json_object_set_string_member (object, "modifier", dirent->modifier);
         json_object_set_int_member (object, "size", dirent->size);
     }
@@ -1826,7 +1851,7 @@ traverse_dir (SeafFSManager *mgr,
     for (p = dir->entries; p; p = p->next) {
         seaf_dent = (SeafDirent *)p->data;
 
-        if (S_ISREG(seaf_dent->mode)) {
+        if (S_ISREGORLNK(seaf_dent->mode)) {
             if (traverse_file (mgr, repo_id, version, seaf_dent->id,
                                callback, user_data, skip_errors) < 0) {
                 if (!skip_errors) {
@@ -1896,7 +1921,7 @@ traverse_dir_path (SeafFSManager *mgr,
         seaf_dent = (SeafDirent *)p->data;
         sub_path = g_strconcat (dir_path, "/", seaf_dent->name, NULL);
 
-        if (S_ISREG(seaf_dent->mode)) {
+        if (S_ISREGORLNK(seaf_dent->mode)) {
             if (!callback (mgr, sub_path, seaf_dent, user_data, &stop)) {
                 g_free (sub_path);
                 ret = -1;
@@ -2040,7 +2065,7 @@ get_dir_size (SeafFSManager *mgr, const char *repo_id, int version, const char *
     for (p = dir->entries; p; p = p->next) {
         seaf_dent = (SeafDirent *)p->data;
 
-        if (S_ISREG(seaf_dent->mode)) {
+        if (S_ISREGORLNK(seaf_dent->mode)) {
             if (dir->version > 0)
                 result = seaf_dent->size;
             else {
@@ -2095,7 +2120,7 @@ count_dir_files (SeafFSManager *mgr, const char *repo_id, int version, const cha
     for (p = dir->entries; p; p = p->next) {
         seaf_dent = (SeafDirent *)p->data;
 
-        if (S_ISREG(seaf_dent->mode)) {
+        if (S_ISREGORLNK(seaf_dent->mode)) {
             count ++;
         } else if (S_ISDIR(seaf_dent->mode)) {
             result = count_dir_files (mgr, repo_id, version, seaf_dent->id);
@@ -2470,7 +2495,7 @@ verify_seafdir (const char *dir_id, uint8_t *data, int len,
     else
         return verify_seafdir_v0 (dir_id, data, len, verify_id);
 }
-                                        
+
 gboolean
 seaf_fs_manager_verify_seafdir (SeafFSManager *mgr,
                                 const char *repo_id,

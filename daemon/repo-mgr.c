@@ -846,8 +846,8 @@ seaf_repo_new (const char *id, const char *name, const char *desc)
     SeafRepo* repo;
 
     /* valid check */
-  
-    
+
+
     repo = g_new0 (SeafRepo, 1);
     memcpy (repo->id, id, 36);
     repo->id[36] = '\0';
@@ -1240,7 +1240,7 @@ static int
 add_file (const char *repo_id,
           int version,
           const char *modifier,
-          struct index_state *istate, 
+          struct index_state *istate,
           const char *path,
           const char *full_path,
           SeafStat *st,
@@ -1432,7 +1432,7 @@ add_dir_recursive (const char *path, const char *full_path, SeafStat *st,
 #endif
         full_subpath = g_build_filename (params->worktree, subpath, NULL);
 
-        if (stat (full_subpath, &sub_st) < 0) {
+        if (lstat (full_subpath, &sub_st) < 0) {
             seaf_warning ("Failed to stat %s: %s.\n", full_subpath, strerror(errno));
             g_free (subpath);
             g_free (full_subpath);
@@ -1459,7 +1459,7 @@ add_dir_recursive (const char *path, const char *full_path, SeafStat *st,
 
         if (S_ISDIR(sub_st.st_mode))
             add_dir_recursive (subpath, full_subpath, &sub_st, params, FALSE);
-        else if (S_ISREG(sub_st.st_mode))
+        else if (S_ISREGORLNK(sub_st.st_mode))
             add_file (params->repo_id,
                       params->version,
                       params->modifier,
@@ -1537,7 +1537,7 @@ static int
 add_recursive (const char *repo_id,
                int version,
                const char *modifier,
-               struct index_state *istate, 
+               struct index_state *istate,
                const char *worktree,
                const char *path,
                SeafileCrypt *crypt,
@@ -1552,11 +1552,6 @@ add_recursive (const char *repo_id,
 
     full_path = g_build_path (PATH_SEPERATOR, worktree, path, NULL);
     if (seaf_stat (full_path, &st) < 0) {
-        /* Ignore broken symlinks on Linux and Mac OS X */
-        if (lstat (full_path, &st) == 0 && S_ISLNK(st.st_mode)) {
-            g_free (full_path);
-            return 0;
-        }
         seaf_warning ("Failed to stat %s.\n", full_path);
         g_free (full_path);
         /* Ignore error. */
@@ -1570,7 +1565,7 @@ add_recursive (const char *repo_id,
         return 0;
     }
 
-    if (S_ISREG(st.st_mode)) {
+    if (S_ISREGORLNK(st.st_mode)) {
         add_file (repo_id,
                   version,
                   modifier,
@@ -1792,7 +1787,7 @@ static int
 add_recursive (const char *repo_id,
                int version,
                const char *modifier,
-               struct index_state *istate, 
+               struct index_state *istate,
                const char *worktree,
                const char *path,
                SeafileCrypt *crypt,
@@ -1819,11 +1814,11 @@ add_recursive (const char *repo_id,
         return 0;
     }
 
-    if (S_ISREG(st.st_mode)) {
+    if (S_ISREGORLNK(st.st_mode)) {
         ret = add_file (repo_id,
                         version,
                         modifier,
-                        istate, 
+                        istate,
                         path,
                         full_path,
                         &st,
@@ -1996,7 +1991,7 @@ remove_deleted (struct index_state *istate, const char *worktree, const char *pr
              * In this case we don't want to mistakenly remove the file
              * from the repo.
              */
-            if ((not_exist || (ret == 0 && !S_ISREG (st.st_mode))) &&
+            if ((not_exist || (ret == 0 && !S_ISREGORLNK (st.st_mode))) &&
                 (ce->ce_ctime.sec != 0 || ce_stage(ce) != 0) &&
                 check_locked_file_before_remove (fset, ce->name))
             {
@@ -2236,7 +2231,7 @@ add_remain_files (SeafRepo *repo, struct index_state *istate,
             continue;
         }
 
-        if (S_ISREG(st.st_mode)) {
+        if (S_ISREGORLNK(st.st_mode)) {
             gboolean added = FALSE;
             int ret = 0;
             ret = add_to_index (repo->id, repo->version, istate, path, full_path,
@@ -2987,7 +2982,7 @@ update_active_path_recursive (SeafRepo *repo,
         if (ignored || should_ignore(full_path, dname, ignore_list))
             ignore_sub = TRUE;
 
-        if (stat (full_sub_path, &st) < 0) {
+        if (lstat (full_sub_path, &st) < 0) {
             seaf_warning ("Failed to stat %s: %s.\n", full_sub_path, strerror(errno));
             g_free (dname);
             g_free (sub_path);
@@ -2998,7 +2993,7 @@ update_active_path_recursive (SeafRepo *repo,
         if (S_ISDIR(st.st_mode)) {
             update_active_path_recursive (repo, sub_path, istate, ignore_list,
                                           ignore_sub);
-        } else if (S_ISREG(st.st_mode)) {
+        } else if (S_ISREGORLNK(st.st_mode)) {
             update_active_file (repo, sub_path, &st, istate,
                                 ignore_sub);
         }
@@ -3060,7 +3055,7 @@ process_active_path (SeafRepo *repo, const char *path,
     if (check_full_path_ignore (repo->worktree, path, ignore_list))
         ignored = TRUE;
 
-    if (S_ISREG(st.st_mode)) {
+    if (S_ISREGORLNK(st.st_mode)) {
         if (!seaf_filelock_manager_is_file_locked(seaf->filelock_mgr,
                                                   repo->id, path)) {
             update_active_file (repo, path, &st, istate, ignored);
@@ -3475,7 +3470,7 @@ do_lock_office_file (LockOfficeJob *job)
         return;
 
     fullpath = g_build_path ("/", repo->worktree, job->path, NULL);
-    if (seaf_stat (fullpath, &st) < 0 || !S_ISREG(st.st_mode)) {
+    if (seaf_stat (fullpath, &st) < 0 || !S_ISREGORLNK(st.st_mode)) {
         g_free (fullpath);
         return;
     }
@@ -3516,7 +3511,7 @@ do_unlock_office_file (LockOfficeJob *job)
         return;
 
     fullpath = g_build_path ("/", repo->worktree, job->path, NULL);
-    if (seaf_stat (fullpath, &st) < 0 || !S_ISREG(st.st_mode)) {
+    if (seaf_stat (fullpath, &st) < 0 || !S_ISREGORLNK(st.st_mode)) {
         g_free (fullpath);
         return;
     }
@@ -3926,7 +3921,7 @@ compare_index_changeset (struct index_state *istate, ChangeSet *changeset)
 }
 
 #if 0
-static int 
+static int
 print_index (struct index_state *istate)
 {
     int i;
@@ -3938,7 +3933,7 @@ print_index (struct index_state *istate)
         ce = istate->cache[i];
         rawdata_to_hex (ce->sha1, id, 20);
         seaf_message ("%s, %s, %o, %"G_GINT64_FORMAT", %s, %"G_GINT64_FORMAT", %d\n",
-                      ce->name, id, ce->ce_mode, 
+                      ce->name, id, ce->ce_mode,
                       ce->ce_mtime.sec, ce->modifier, ce->ce_size, ce_stage(ce));
     }
 
@@ -4087,7 +4082,7 @@ print_unpack_result (struct index_state *result)
 	}
 }
 
-static int 
+static int
 print_index (struct index_state *istate)
 {
     printf ("Index timestamp: %d\n", istate->timestamp.sec);
@@ -4099,7 +4094,7 @@ print_index (struct index_state *istate)
     for (i = 0; i < istate->cache_nr; ++i) {
         ce = istate->cache[i];
         rawdata_to_hex (ce->sha1, id, 20);
-        printf ("%s\t%s\t%o\t%d\t%d\n", ce->name, id, ce->ce_mode, 
+        printf ("%s\t%s\t%o\t%d\t%d\n", ce->name, id, ce->ce_mode,
                 ce->ce_ctime.sec, ce->ce_mtime.sec);
     }
 
@@ -4223,7 +4218,7 @@ cache_entry_from_diff_entry (DiffEntry *de)
     ce->ce_size = de->size;
     ce->ce_mtime.sec = de->mtime;
 
-    if (S_ISREG(de->mode))
+    if (S_ISREGORLNK(de->mode))
         ce->ce_mode = create_ce_mode (de->mode);
     else
         ce->ce_mode = S_IFDIR;
@@ -4281,7 +4276,7 @@ fetch_file_http (FileTxData *data, FileTxTask *file_task)
 
     path_exists = (seaf_stat (path, &st) == 0);
 
-    if (path_exists && S_ISREG(st.st_mode)) {
+    if (path_exists && S_ISREGORLNK(st.st_mode)) {
         if (st.st_mtime == ce->ce_mtime.sec) {
             /* Worktree and index are consistent. */
             if (memcmp (de->sha1, ce->sha1, 20) == 0) {
@@ -4553,7 +4548,7 @@ checkout_file_http (FileTxData *data,
 
     /* The worktree file may have been changed when we're downloading the blocks. */
     if (!file_task->new_ce &&
-        path_exists && S_ISREG(st.st_mode) &&
+        path_exists && S_ISREGORLNK(st.st_mode) &&
         !force_conflict) {
         if (st.st_mtime != ce->ce_mtime.sec) {
             seaf_message ("File %s is updated by user. "
@@ -4563,7 +4558,7 @@ checkout_file_http (FileTxData *data,
     }
 
     /* Temporarily unlock the file if it's locked on server, so that the client
-     * itself can write to it. 
+     * itself can write to it.
      */
     if (locked_on_server)
         seaf_filelock_manager_unlock_wt_file (seaf->filelock_mgr,
@@ -4571,6 +4566,7 @@ checkout_file_http (FileTxData *data,
 
     /* then checkout the file. */
     gboolean conflicted = FALSE;
+
     if (seaf_fs_manager_checkout_file (seaf->fs_mgr,
                                        repo_id,
                                        repo_version,
@@ -4851,7 +4847,7 @@ expand_dir_added_cb (SeafFSManager *mgr,
 
     if (S_ISDIR(dent->mode) && strcmp(dent->id, EMPTY_SHA1) == 0)
         de = diff_entry_new (DIFF_TYPE_COMMITS, DIFF_STATUS_DIR_ADDED, sha1, path);
-    else if (S_ISREG(dent->mode))
+    else if (S_ISREGORLNK(dent->mode))
         de = diff_entry_new (DIFF_TYPE_COMMITS, DIFF_STATUS_ADDED, sha1, path);
 
     if (de) {
@@ -5412,6 +5408,7 @@ seaf_repo_fetch_and_checkout (HttpTxTask *http_task, const char *remote_head_id)
 
     for (ptr = results; ptr; ptr = ptr->next) {
         de = ptr->data;
+
         if (de->status == DIFF_STATUS_DELETED) {
             seaf_debug ("Delete file %s.\n", de->name);
 
@@ -5850,7 +5847,7 @@ seaf_repo_manager_create_new_repo (SeafRepoManager *mgr,
 {
     SeafRepo *repo;
     char *repo_id;
-    
+
     repo_id = gen_uuid ();
     repo = seaf_repo_new (repo_id, name, desc);
     if (!repo) {
@@ -5991,7 +5988,7 @@ seaf_repo_manager_remove_repo_ondisk (SeafRepoManager *mgr,
     if (sqlite_query_exec (mgr->priv->db, sql) < 0)
         goto out;
 
-    snprintf (sql, sizeof(sql), 
+    snprintf (sql, sizeof(sql),
               "DELETE FROM DeletedRepo WHERE repo_id = '%s'", repo_id);
     sqlite_query_exec (mgr->priv->db, sql);
 
@@ -6004,7 +6001,7 @@ seaf_repo_manager_remove_repo_ondisk (SeafRepoManager *mgr,
 
     /* remove branch */
     GList *p;
-    GList *branch_list = 
+    GList *branch_list =
         seaf_branch_manager_get_branch_list (seaf->branch_mgr, repo_id);
     for (p = branch_list; p; p = p->next) {
         SeafBranch *b = (SeafBranch *)p->data;
@@ -6018,14 +6015,14 @@ seaf_repo_manager_remove_repo_ondisk (SeafRepoManager *mgr,
 
     pthread_mutex_lock (&mgr->priv->db_lock);
 
-    snprintf (sql, sizeof(sql), "DELETE FROM RepoPasswd WHERE repo_id = '%s'", 
+    snprintf (sql, sizeof(sql), "DELETE FROM RepoPasswd WHERE repo_id = '%s'",
               repo_id);
     sqlite_query_exec (mgr->priv->db, sql);
-    snprintf (sql, sizeof(sql), "DELETE FROM RepoKeys WHERE repo_id = '%s'", 
+    snprintf (sql, sizeof(sql), "DELETE FROM RepoKeys WHERE repo_id = '%s'",
               repo_id);
     sqlite_query_exec (mgr->priv->db, sql);
 
-    snprintf (sql, sizeof(sql), "DELETE FROM MergeInfo WHERE repo_id = '%s'", 
+    snprintf (sql, sizeof(sql), "DELETE FROM MergeInfo WHERE repo_id = '%s'",
               repo_id);
     sqlite_query_exec (mgr->priv->db, sql);
 
@@ -6033,15 +6030,15 @@ seaf_repo_manager_remove_repo_ondisk (SeafRepoManager *mgr,
               repo_id);
     sqlite_query_exec (mgr->priv->db, sql);
 
-    snprintf (sql, sizeof(sql), "DELETE FROM FolderUserPerms WHERE repo_id = '%s'", 
+    snprintf (sql, sizeof(sql), "DELETE FROM FolderUserPerms WHERE repo_id = '%s'",
               repo_id);
     sqlite_query_exec (mgr->priv->db, sql);
 
-    snprintf (sql, sizeof(sql), "DELETE FROM FolderGroupPerms WHERE repo_id = '%s'", 
+    snprintf (sql, sizeof(sql), "DELETE FROM FolderGroupPerms WHERE repo_id = '%s'",
               repo_id);
     sqlite_query_exec (mgr->priv->db, sql);
 
-    snprintf (sql, sizeof(sql), "DELETE FROM FolderPermTimestamp WHERE repo_id = '%s'", 
+    snprintf (sql, sizeof(sql), "DELETE FROM FolderPermTimestamp WHERE repo_id = '%s'",
               repo_id);
     sqlite_query_exec (mgr->priv->db, sql);
 
@@ -6166,7 +6163,7 @@ seaf_repo_manager_repo_exists (SeafRepoManager *manager, const gchar *id)
 
     if (res && !res->delete_pending)
         return TRUE;
-    
+
     return FALSE;
 }
 
@@ -6263,7 +6260,7 @@ load_repo_passwd (SeafRepoManager *manager, SeafRepo *repo)
 
     pthread_mutex_lock (&manager->priv->db_lock);
 
-    snprintf (sql, sizeof(sql), 
+    snprintf (sql, sizeof(sql),
               "SELECT key, iv FROM RepoKeys WHERE repo_id='%s'",
               repo->id);
     n = sqlite_foreach_selected_row (db, sql, load_keys_cb, repo);
@@ -6275,7 +6272,7 @@ load_repo_passwd (SeafRepoManager *manager, SeafRepo *repo)
     pthread_mutex_unlock (&manager->priv->db_lock);
 
     return 0;
-    
+
 }
 
 static gboolean
@@ -6325,7 +6322,7 @@ load_branch_cb (sqlite3_stmt *stmt, void *vrepo)
         seaf_branch_manager_get_branch (manager->seaf->branch_mgr,
                                         repo->id, branch_name);
     if (branch == NULL) {
-        seaf_warning ("Broken branch name for repo %s\n", repo->id); 
+        seaf_warning ("Broken branch name for repo %s\n", repo->id);
         repo->is_corrupted = TRUE;
         return FALSE;
     }
@@ -6361,7 +6358,7 @@ load_repo (SeafRepoManager *manager, const char *repo_id)
 
     snprintf(sql, 256, "SELECT branch_name FROM RepoBranch WHERE repo_id='%s'",
              repo->id);
-    if (sqlite_foreach_selected_row (manager->priv->db, sql, 
+    if (sqlite_foreach_selected_row (manager->priv->db, sql,
                                      load_branch_cb, repo) < 0) {
         seaf_warning ("Error read branch for repo %s.\n", repo->id);
         seaf_repo_free (repo);
@@ -6520,7 +6517,7 @@ open_db (SeafRepoManager *manager, const char *seaf_dir)
     sql = "CREATE TABLE IF NOT EXISTS RepoKeys "
         "(repo_id TEXT PRIMARY KEY, key TEXT NOT NULL, iv TEXT NOT NULL);";
     sqlite_query_exec (db, sql);
-    
+
     sql = "CREATE TABLE IF NOT EXISTS RepoProperty ("
         "repo_id TEXT, key TEXT, value TEXT);";
     sqlite_query_exec (db, sql);
@@ -6672,7 +6669,7 @@ canonical_server_url (const char *url_in)
 }
 
 int
-seaf_repo_manager_set_repo_property (SeafRepoManager *manager, 
+seaf_repo_manager_set_repo_property (SeafRepoManager *manager,
                                      const char *repo_id,
                                      const char *key,
                                      const char *value)
@@ -6755,7 +6752,7 @@ seaf_repo_manager_set_repo_property (SeafRepoManager *manager,
 }
 
 char *
-seaf_repo_manager_get_repo_property (SeafRepoManager *manager, 
+seaf_repo_manager_get_repo_property (SeafRepoManager *manager,
                                      const char *repo_id,
                                      const char *key)
 {
@@ -6763,7 +6760,7 @@ seaf_repo_manager_get_repo_property (SeafRepoManager *manager,
 }
 
 static void
-seaf_repo_manager_del_repo_property (SeafRepoManager *manager, 
+seaf_repo_manager_del_repo_property (SeafRepoManager *manager,
                                      const char *repo_id)
 {
     char *sql;
@@ -6821,7 +6818,7 @@ save_repo_enc_info (SeafRepoManager *manager,
     return 0;
 }
 
-int 
+int
 seaf_repo_manager_set_repo_passwd (SeafRepoManager *manager,
                                    SeafRepo *repo,
                                    const char *passwd)
@@ -6905,7 +6902,7 @@ seaf_repo_manager_set_repo_email (SeafRepoManager *mgr,
 }
 
 int
-seaf_repo_manager_set_repo_token (SeafRepoManager *manager, 
+seaf_repo_manager_set_repo_token (SeafRepoManager *manager,
                                   SeafRepo *repo,
                                   const char *token)
 {
@@ -6992,10 +6989,10 @@ seaf_repo_manager_update_repos_server_host (SeafRepoManager *mgr,
 
     for (ptr = repos; ptr; ptr = ptr->next) {
         r = ptr->data;
-                
+
         char *relay_addr = NULL;
         char *relay_port = NULL;
-        seaf_repo_manager_get_repo_relay_info (seaf->repo_mgr, r->id, 
+        seaf_repo_manager_get_repo_relay_info (seaf->repo_mgr, r->id,
                                                &relay_addr, &relay_port);
         if (g_strcmp0(relay_addr, old_host) == 0) {
             seaf_repo_manager_set_repo_relay_info (seaf->repo_mgr, r->id,
@@ -7092,7 +7089,7 @@ GList *seaf_repo_load_ignore_files (const char *worktree)
                               IGNORE_FILE, NULL);
     if (seaf_stat (full_path, &st) < 0)
         goto error;
-    if (!S_ISREG(st.st_mode))
+    if (!S_ISREGORLNK(st.st_mode))
         goto error;
     fp = g_fopen(full_path, "r");
     if (fp == NULL)

@@ -26,7 +26,7 @@
 #ifdef WIN32
 #include <inttypes.h>
 #include <winsock2.h>
-#include <windows.h>   
+#include <windows.h>
 
 #define DT_UNKNOWN 0
 #define DT_DIR     1
@@ -282,11 +282,11 @@ static inline size_t ce_namelen(const struct cache_entry *ce)
 #define ce_skip_worktree(ce) ((ce)->ce_flags & CE_SKIP_WORKTREE)
 #define ce_mark_uptodate(ce) ((ce)->ce_flags |= CE_UPTODATE)
 
-#define ce_permissions(mode) (((mode) & 0100) ? 0755 : 0644)
+#define ce_permissions(mode) (((mode) & 0100) ? 0777 : 0644)
 static inline unsigned int create_ce_mode(unsigned int mode)
 {
     if (S_ISLNK(mode))
-        return S_IFLNK;
+        return S_IFLNK | 0777;
     if (S_ISDIR(mode))
         return S_IFDIR;
     return S_IFREG | ce_permissions(mode);
@@ -312,7 +312,7 @@ static inline unsigned int canon_mode(unsigned int mode)
     if (S_ISREG(mode))
         return S_IFREG | ce_permissions(mode);
     if (S_ISLNK(mode))
-        return S_IFLNK;
+        return S_IFLNK | 0777;
     if (S_ISDIR(mode))
         return S_IFDIR;
     return S_IFGITLINK;

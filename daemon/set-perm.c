@@ -87,7 +87,7 @@ seaf_set_path_permission (const char *path, SeafPathPerm perm, gboolean recursiv
     if (!wpath)
         return -1;
 
-    res = GetNamedSecurityInfoW(wpath, SE_FILE_OBJECT, 
+    res = GetNamedSecurityInfoW(wpath, SE_FILE_OBJECT,
                                 DACL_SECURITY_INFORMATION,
                                 NULL, NULL, &old_dacl, NULL, &sd);
     if (ERROR_SUCCESS != res) {
@@ -98,7 +98,7 @@ seaf_set_path_permission (const char *path, SeafPathPerm perm, gboolean recursiv
 
     unset_permissions (old_dacl);
 
-    // Initialize an EXPLICIT_ACCESS structure for the new ACE. 
+    // Initialize an EXPLICIT_ACCESS structure for the new ACE.
 
     memset (&ea, 0, sizeof(EXPLICIT_ACCESS));
     ea.grfAccessPermissions = WIN32_WRITE_ACCESS_MASK;
@@ -116,12 +116,12 @@ seaf_set_path_permission (const char *path, SeafPathPerm perm, gboolean recursiv
         seaf_warning( "SetEntriesInAcl Error %lu\n", res );
         ret = -1;
         goto cleanup;
-    }  
+    }
 
     // Attach the new ACL as the object's DACL.
 
     if (recursive) {
-        res = SetNamedSecurityInfoW(wpath, SE_FILE_OBJECT, 
+        res = SetNamedSecurityInfoW(wpath, SE_FILE_OBJECT,
                                     DACL_SECURITY_INFORMATION,
                                     NULL, NULL, new_dacl, NULL);
         if (ERROR_SUCCESS != res)  {
@@ -144,9 +144,9 @@ seaf_set_path_permission (const char *path, SeafPathPerm perm, gboolean recursiv
 
  cleanup:
     g_free (wpath);
-    if(sd != NULL) 
+    if(sd != NULL)
         LocalFree((HLOCAL) sd);
-    if(new_dacl != NULL) 
+    if(new_dacl != NULL)
         LocalFree((HLOCAL) new_dacl);
     return ret;
 }
@@ -167,7 +167,7 @@ seaf_unset_path_permission (const char *path, gboolean recursive)
     if (!wpath)
         return -1;
 
-    res = GetNamedSecurityInfoW(wpath, SE_FILE_OBJECT, 
+    res = GetNamedSecurityInfoW(wpath, SE_FILE_OBJECT,
                                 DACL_SECURITY_INFORMATION,
                                 NULL, NULL, &old_dacl, NULL, &sd);
     if (ERROR_SUCCESS != res) {
@@ -194,7 +194,7 @@ seaf_unset_path_permission (const char *path, gboolean recursive)
     // Update path's ACL
 
     if (recursive) {
-        res = SetNamedSecurityInfoW(wpath, SE_FILE_OBJECT, 
+        res = SetNamedSecurityInfoW(wpath, SE_FILE_OBJECT,
                                     DACL_SECURITY_INFORMATION,
                                     NULL, NULL, new_dacl, NULL);
         if (ERROR_SUCCESS != res)  {
@@ -217,9 +217,9 @@ seaf_unset_path_permission (const char *path, gboolean recursive)
 
  cleanup:
     g_free (wpath);
-    if(sd != NULL) 
+    if(sd != NULL)
         LocalFree((HLOCAL) sd);
-    if(new_dacl != NULL) 
+    if(new_dacl != NULL)
         LocalFree((HLOCAL) new_dacl);
     return ret;
 }
@@ -237,7 +237,7 @@ seaf_get_path_permission (const char *path)
     if (!wpath)
         return ret;
 
-    res = GetNamedSecurityInfoW(wpath, SE_FILE_OBJECT, 
+    res = GetNamedSecurityInfoW(wpath, SE_FILE_OBJECT,
                                 DACL_SECURITY_INFORMATION,
                                 NULL, NULL, &dacl, NULL, &sd);
     if (ERROR_SUCCESS != res) {
@@ -284,7 +284,7 @@ seaf_get_path_permission (const char *path)
 
 cleanup:
     g_free (wpath);
-    if(sd != NULL) 
+    if(sd != NULL)
         LocalFree((HLOCAL) sd);
     return ret;
 }
@@ -299,7 +299,7 @@ seaf_set_path_permission (const char *path, SeafPathPerm perm, gboolean recursiv
     struct stat st;
     mode_t new_mode;
 
-    if (stat (path, &st) < 0) {
+    if (lstat (path, &st) < 0) {
         seaf_warning ("Failed to stat %s: %s\n", path, strerror(errno));
         return -1;
     }

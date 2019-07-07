@@ -452,7 +452,7 @@ void fill_stat_cache_info(struct cache_entry *ce, SeafStat *st)
     /* if (assume_unchanged) */
     /*     ce->ce_flags |= CE_VALID; */
 
-    if (S_ISREG(st->st_mode))
+    if (S_ISREGORLNK(st->st_mode))
         ce_mark_uptodate(ce);
 }
 
@@ -472,7 +472,8 @@ static int ce_match_stat_basic(struct cache_entry *ce, SeafStat *st)
 
     switch (ce->ce_mode & S_IFMT) {
     case S_IFREG:
-        changed |= !S_ISREG(st->st_mode) ? TYPE_CHANGED : 0;
+    case S_IFLNK:
+        changed |= !S_ISREGORLNK(st->st_mode) ? TYPE_CHANGED : 0;
         /* We consider only the owner x bit to be relevant for
          * "mode changes"
          */
@@ -481,10 +482,12 @@ static int ce_match_stat_basic(struct cache_entry *ce, SeafStat *st)
             changed |= MODE_CHANGED;
 #endif
         break;
+#if 0
     case S_IFLNK:
         if (!S_ISLNK(st->st_mode))
             changed |= TYPE_CHANGED;
         break;
+#endif
     case S_IFGITLINK:
         /* We ignore most of the st_xxx fields for gitlinks */
         if (!S_ISDIR(st->st_mode))
@@ -542,7 +545,7 @@ static int is_racy_timestamp(const struct index_state *istate, struct cache_entr
 static int ce_compare_data(struct cache_entry *ce, SeafStat *st)
 {
     int match = -1;
-    int fd = g_open (ce->name, O_RDONLY | O_BINARY);
+    int fd = seaf_util_open (ce->name, O_RDONLY | O_BINARY);
 
     if (fd >= 0) {
         unsigned char sha1[20];
@@ -568,11 +571,8 @@ static int ce_modified_check_fs(struct cache_entry *ce, SeafStat *st)
 {
     switch (st->st_mode & S_IFMT) {
     case S_IFREG:
-        if (ce_compare_data(ce, st))
-            return DATA_CHANGED;
-        break;
     case S_IFLNK:
-        if (ce_compare_link(ce, st))
+        if (ce_compare_data(ce, st))
             return DATA_CHANGED;
         break;
     default:
@@ -972,7 +972,7 @@ int add_to_index(const char *repo_id,
 
     *added = FALSE;
 
-    if (!S_ISREG(st_mode) && !S_ISLNK(st_mode) && !S_ISDIR(st_mode)) {
+    if (!S_ISREGORLNK(st_mode) && !S_ISDIR(st_mode)) {
         seaf_warning("%s: can only add regular files, symbolic links or git-directories\n", path);
         return -1;
     }
@@ -1011,7 +1011,7 @@ int add_to_index(const char *repo_id,
 
 #ifdef WIN32
     /* On Windows, no 'x' bit in file mode.
-     * To prevent overwriting 'x' bit, we directly use existing ce mode. 
+     * To prevent overwriting 'x' bit, we directly use existing ce mode.
      */
     if (alias)
         ce->ce_mode = alias->ce_mode;
@@ -1393,7 +1393,7 @@ rename_index_entries (struct index_state *istate,
 
     /* There should be at least n_entries free room in istate->cache array,
      * since we just removed n_entries from the index in
-     * create_renamed_cache_entires(). 
+     * create_renamed_cache_entires().
      */
     if (istate->cache_alloc - istate->cache_nr < n_entries) {
         seaf_warning ("BUG: not enough room to insert renamed entries.\n"
@@ -1635,8 +1635,8 @@ static struct cache_entry *refresh_cache_entry(struct cache_entry *ce,
 }
 
 struct cache_entry *make_cache_entry(unsigned int mode,
-                                     const unsigned char *sha1, 
-                                     const char *path, const char *full_path, 
+                                     const unsigned char *sha1,
+                                     const char *path, const char *full_path,
                                      int stage, int refresh)
 {
     int size, len;
@@ -1764,6 +1764,7 @@ int index_path(unsigned char *sha1, const char *path, SeafStat *st)
 
     switch (st->st_mode & S_IFMT) {
     case S_IFREG:
+    case S_IFLNK:
         fd = seaf_util_open (path, O_RDONLY | O_BINARY);
         if (fd < 0) {
             seaf_warning("g_open (\"%s\"): %s\n", path, strerror(errno));
@@ -1773,17 +1774,6 @@ int index_path(unsigned char *sha1, const char *path, SeafStat *st)
             return -1;
         }
         break;
-#ifndef WIN32        
-    case S_IFLNK:
-        pathlen = readlink(path, buf, SEAF_PATH_MAX);
-        if (pathlen != st->st_size) {
-            char *errstr = strerror(errno);
-            seaf_warning("readlink(\"%s\"): %s\n", path, errstr);
-            return -1;
-        }
-        hash_sha1_file(buf, pathlen, typename(OBJ_BLOB), sha1);
-        break;
-#endif        
     default:
         seaf_warning("%s: unsupported file type\n", path);
         return -1;

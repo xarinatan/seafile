@@ -28,8 +28,8 @@
 #ifndef WIN32
 #include <pwd.h>
 #include <uuid/uuid.h>
+#include <sys/mman.h>
 #endif
-
 #include <unistd.h>
 #include <sys/types.h>
 #include <fcntl.h>
@@ -39,14 +39,11 @@
 #include <limits.h>
 #include <stdarg.h>
 #include <string.h>
-
 #include <glib.h>
 #include <glib/gstdio.h>
 #include <searpc-utils.h>
 
 #include <jansson.h>
-
-#include <utime.h>
 
 #include <zlib.h>
 
@@ -400,7 +397,7 @@ out:
 
     return ret;
 #else
-    return stat (path, st);
+    return lstat (path, st);
 #endif
 }
 
@@ -446,17 +443,18 @@ seaf_set_file_time (const char *path, guint64 mtime)
 {
 #ifndef WIN32
     struct stat st;
-    struct utimbuf times;
+    struct timespec times[2];
 
-    if (stat (path, &st) < 0) {
+    if (lstat (path, &st) < 0) {
         g_warning ("Failed to stat %s: %s.\n", path, strerror(errno));
         return -1;
     }
 
-    times.actime = st.st_atime;
-    times.modtime = (time_t)mtime;
+    times[0] = st.st_atim;
+    times[1].tv_sec = mtime;
+    times[1].tv_nsec = 0;
 
-    return utime (path, &times);
+    return utimensat (AT_FDCWD, path, times, AT_SYMLINK_NOFOLLOW);
 #else
     wchar_t *wpath = win32_long_path (path);
     int ret = 0;
@@ -559,7 +557,29 @@ seaf_util_open (const char *path, int flags)
     g_free (wpath);
     return fd;
 #else
-    return open (path, flags);
+    int fd = open (path, flags | O_NOFOLLOW);
+
+    if (fd >= 0 || errno != ELOOP)
+        return fd;
+
+    // An ELOOP error occurred, that should only happen when path was a symlink.
+    // We create an anonymous file that contains the target of the link.
+    char target[SEAF_PATH_MAX];
+    int len = readlink (path, target, SEAF_PATH_MAX);
+
+    if (len < 0)
+        return -1;
+    fd = memfd_create ("symlink", 0);
+    if (fd < 0)
+        return -1;
+    if (write (fd, target, len) != len) {
+        close (fd);
+        return -1;
+    }
+    lseek(fd, 0, SEEK_SET);
+    target[len] = 0;
+
+    return fd;
 #endif
 }
 
@@ -635,7 +655,9 @@ seaf_util_exists (const char *path)
     g_free (wpath);
     return ret;
 #else
-    return (access (path, F_OK) == 0);
+    SeafStat st;
+
+    return (access (path, F_OK) == 0 || lstat (path, &st) == 0);
 #endif
 }
 
@@ -2161,7 +2183,7 @@ win_stat64_utf8 (char *path_utf8, STAT_STRUCT *sb)
 
 #else
     #define STAT_STRUCT struct stat
-    #define STAT_FUNC stat
+    #define STAT_FUNC lstat
 #endif
 
 static gint64
@@ -2198,7 +2220,7 @@ calc_recursively (const char *path, GError **calc_error)
             }
             sum += size;
             g_free(full_path);
-        } else if (S_ISREG(sb.st_mode)) {
+        } else if (S_ISREGORLNK(sb.st_mode)) {
             sum += sb.st_size;
             g_free(full_path);
         }

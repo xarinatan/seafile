@@ -521,7 +521,7 @@ add_watch_recursive (RepoWatchInfo *info,
 
     full_path = g_build_filename (worktree, path, NULL);
 
-    if (stat (full_path, &st) < 0) {
+    if (lstat (full_path, &st) < 0) {
         seaf_warning ("[wt mon] fail to stat %s: %s\n", full_path, strerror(errno));
         goto out;
     }
@@ -563,11 +563,10 @@ add_watch_recursive (RepoWatchInfo *info,
              * Note that d_type may not be supported in some file systems,
              * in this case DT_UNKNOWN is returned.
              */
-            if (dent->d_type == DT_DIR || dent->d_type == DT_LNK ||
-                dent->d_type == DT_UNKNOWN)
+            if (dent->d_type == DT_DIR || dent->d_type == DT_UNKNOWN)
                 add_watch_recursive (info, in_fd, worktree, sub_path, add_events);
 
-            if (dent->d_type == DT_REG && add_events)
+            if ((dent->d_type == DT_REG || dent->d_type == DT_LNK) && add_events)
                 add_event_to_queue (info->status, WT_EVENT_CREATE_OR_UPDATE,
                                     sub_path, NULL);
             g_free (sub_path);

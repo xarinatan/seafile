@@ -299,7 +299,7 @@ seaf_set_path_permission (const char *path, SeafPathPerm perm, gboolean recursiv
     struct stat st;
     mode_t new_mode;
 
-    if (stat (path, &st) < 0) {
+    if (lstat (path, &st) < 0) {
         seaf_warning ("Failed to stat %s: %s\n", path, strerror(errno));
         return -1;
     }

@@ -141,7 +141,7 @@ process_one_event (const char* eventPath,
     /* Reinterpreted RENAMED as combine of CREATED or DELETED event */
     if (eventFlags & kFSEventStreamEventFlagItemRenamed) {
         seaf_debug ("Rename flag set for %s \n", filename);
-        if (stat (eventPath, &buf) < 0) {
+        if (lstat (eventPath, &buf) < 0) {
             /* ret = -1, file is gone */
             add_event_to_queue (status, WT_EVENT_DELETE, filename, NULL);
         } else {
@@ -152,14 +152,14 @@ process_one_event (const char* eventPath,
 
     if (eventFlags & kFSEventStreamEventFlagItemRemoved) {
         seaf_debug ("Deleted flag set for %s.\n", filename);
-        if (stat (eventPath, &buf) < 0) {
+        if (lstat (eventPath, &buf) < 0) {
             add_event_to_queue (status, WT_EVENT_DELETE, filename, NULL);
         }
     }
 
     if (eventFlags & kFSEventStreamEventFlagItemModified) {
         seaf_debug ("Modified flag set for %s.\n", filename);
-        if (stat (eventPath, &buf) == 0) {
+        if (lstat (eventPath, &buf) == 0) {
             add_event_to_queue (status, WT_EVENT_CREATE_OR_UPDATE, filename, NULL);
         }
     }
@@ -174,7 +174,7 @@ process_one_event (const char* eventPath,
           * kFSEventStreamEventFlagItemIsDir
           * kFSEventStreamEventFlagItemIsSymlink
           */
-        if (stat (eventPath, &buf) == 0) {
+        if (lstat (eventPath, &buf) == 0) {
             add_event_to_queue (status, WT_EVENT_CREATE_OR_UPDATE, filename, NULL);
         }
     }

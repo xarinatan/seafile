@@ -452,7 +452,7 @@ void fill_stat_cache_info(struct cache_entry *ce, SeafStat *st)
     /* if (assume_unchanged) */
     /*     ce->ce_flags |= CE_VALID; */
 
-    if (S_ISREG(st->st_mode))
+    if (S_ISREGORLNK(st->st_mode))
         ce_mark_uptodate(ce);
 }
 
@@ -542,7 +542,7 @@ static int is_racy_timestamp(const struct index_state *istate, struct cache_entr
 static int ce_compare_data(struct cache_entry *ce, SeafStat *st)
 {
     int match = -1;
-    int fd = g_open (ce->name, O_RDONLY | O_BINARY);
+    int fd = seaf_util_open (ce->name, O_RDONLY | O_BINARY);
 
     if (fd >= 0) {
         unsigned char sha1[20];
@@ -568,11 +568,8 @@ static int ce_modified_check_fs(struct cache_entry *ce, SeafStat *st)
 {
     switch (st->st_mode & S_IFMT) {
     case S_IFREG:
-        if (ce_compare_data(ce, st))
-            return DATA_CHANGED;
-        break;
     case S_IFLNK:
-        if (ce_compare_link(ce, st))
+        if (ce_compare_data(ce, st))
             return DATA_CHANGED;
         break;
     default:
@@ -1764,6 +1761,7 @@ int index_path(unsigned char *sha1, const char *path, SeafStat *st)
 
     switch (st->st_mode & S_IFMT) {
     case S_IFREG:
+    case S_IFLNK:
         fd = seaf_util_open (path, O_RDONLY | O_BINARY);
         if (fd < 0) {
             seaf_warning("g_open (\"%s\"): %s\n", path, strerror(errno));
@@ -1773,17 +1771,6 @@ int index_path(unsigned char *sha1, const char *path, SeafStat *st)
             return -1;
         }
         break;
-#ifndef WIN32        
-    case S_IFLNK:
-        pathlen = readlink(path, buf, SEAF_PATH_MAX);
-        if (pathlen != st->st_size) {
-            char *errstr = strerror(errno);
-            seaf_warning("readlink(\"%s\"): %s\n", path, errstr);
-            return -1;
-        }
-        hash_sha1_file(buf, pathlen, typename(OBJ_BLOB), sha1);
-        break;
-#endif        
     default:
         seaf_warning("%s: unsupported file type\n", path);
         return -1;

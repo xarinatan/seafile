@@ -286,7 +286,7 @@ static inline size_t ce_namelen(const struct cache_entry *ce)
 static inline unsigned int create_ce_mode(unsigned int mode)
 {
     if (S_ISLNK(mode))
-        return S_IFLNK;
+        return S_IFLNK | 0777;
     if (S_ISDIR(mode))
         return S_IFDIR;
     return S_IFREG | ce_permissions(mode);
@@ -312,7 +312,7 @@ static inline unsigned int canon_mode(unsigned int mode)
     if (S_ISREG(mode))
         return S_IFREG | ce_permissions(mode);
     if (S_ISLNK(mode))
-        return S_IFLNK;
+        return S_IFLNK | 0777;
     if (S_ISDIR(mode))
         return S_IFDIR;
     return S_IFGITLINK;

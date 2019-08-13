@@ -1,3 +1,22 @@
+# Quick install guide for this repo
+This is a fork from Haiwen's Seafile repository, with a patch that allows Symlinks to work as Symlinks on Linux and Mac. 
+You can install it alongside your normal version of Seafile, it will install into `/usr/local/bin/` instead of `/usr/bin/`, so it should override the relevant parts automatically and unintrusively. 
+Compiling is done as follows:
+```
+git clone https://github.com/xarinatan/seafile-symlink.git
+cd seafile-symlink
+./autogen.sh
+./configure
+#change -j 4 below to your processor threads/cores count
+make -j 4 
+sudo make install
+```
+After that, you can verify you're using the right version by running `which seaf-daemon`, which should return the one from `/usr/local/bin`. 
+
+
+Original description from the original repo:
+
+
 ## Introduction [![Build Status](https://secure.travis-ci.org/haiwen/seafile.svg?branch=master)](http://travis-ci.org/haiwen/seafile)
 
 Seafile is an open source cloud storage system with privacy protection and teamwork features. Collections of files are called libraries. Each library can be synced separately. A library can also be encrypted with a user chosen password. Seafile also allows users to create groups and easily sharing files into groups.

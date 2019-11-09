@@ -30,15 +30,6 @@ GObject* seafile_get_repo (const gchar* id, GError **error);
 GObject *
 seafile_get_repo_sync_task (const char *repo_id, GError **error);
 
-/**
- * seafile_get_repo_sync_info:
- */
-GObject *
-seafile_get_repo_sync_info (const char *repo_id, GError **error);
-
-GList*
-seafile_get_repo_sinfo (const char *repo_id, GError **error);
-
 /* [seafile_get_config] returns the value of the config entry whose name is
  * [key] in config.db
  */
@@ -240,4 +231,7 @@ json_t * seafile_get_sync_notification (GError **error);
 
 int
 seafile_shutdown (GError **error);
+
+char*
+seafile_sync_error_id_to_str (int error_id, GError **error);
 #endif

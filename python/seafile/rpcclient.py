@@ -13,6 +13,11 @@ class SeafileRpcClient(NamedPipeClient):
              **kwargs
          )
 
+    @searpc_func("string", ["int"])
+    def seafile_sync_error_id_to_str():
+        pass
+    sync_error_id_to_str = seafile_sync_error_id_to_str
+         
     @searpc_func("object", [])
     def seafile_get_session_info():
         pass
@@ -139,11 +144,6 @@ class SeafileRpcClient(NamedPipeClient):
         pass
     find_transfer_task = seafile_find_transfer_task
 
-    @searpc_func("object", ["string"])
-    def seafile_get_checkout_task(repo_id):
-        pass
-    get_checkout_task = seafile_get_checkout_task
-
     ### sync
     @searpc_func("int", ["string", "string"])
     def seafile_sync(repo_id, peer_id):
@@ -155,15 +155,15 @@ class SeafileRpcClient(NamedPipeClient):
         pass
     get_repo_sync_task = seafile_get_repo_sync_task
 
-    @searpc_func("object", ["string"])
-    def seafile_get_repo_sync_info():
-        pass
-    get_repo_sync_info = seafile_get_repo_sync_info
-
     @searpc_func("int", [])
     def seafile_is_auto_sync_enabled():
         pass
     is_auto_sync_enabled = seafile_is_auto_sync_enabled
+
+    @searpc_func("objlist", ["int", "int"])
+    def seafile_get_file_sync_errors():
+        pass
+    get_file_sync_errors = seafile_get_file_sync_errors
 
     ###### Property Management #########
 

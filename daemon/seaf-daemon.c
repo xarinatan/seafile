@@ -17,6 +17,7 @@
 #include <glib.h>
 #include <glib-object.h>
 #include <curl/curl.h>
+#include <event2/thread.h>
 
 #ifdef HAVE_BREAKPAD_SUPPORT
 #include <c_bpwrapper.h>
@@ -79,6 +80,11 @@ register_rpc_service ()
     searpc_create_service ("seafile-threaded-rpcserver");
 
     /* seafile-rpcserver */
+    searpc_server_register_function ("seafile-rpcserver",
+                                     seafile_sync_error_id_to_str,
+                                     "seafile_sync_error_id_to_str",
+                                     searpc_signature_string__int());
+    
     searpc_server_register_function ("seafile-rpcserver",
                                      seafile_get_session_info,
                                      "seafile_get_session_info",
@@ -220,11 +226,6 @@ register_rpc_service ()
     searpc_server_register_function ("seafile-rpcserver",
                                      seafile_get_repo_sync_task,
                                      "seafile_get_repo_sync_task",
-                                     searpc_signature_object__string());
-
-    searpc_server_register_function ("seafile-rpcserver",
-                                     seafile_get_repo_sync_info,
-                                     "seafile_get_repo_sync_info",
                                      searpc_signature_object__string());
 
     searpc_server_register_function ("seafile-rpcserver",
@@ -473,6 +474,11 @@ main (int argc, char **argv)
 #endif
 #if !GLIB_CHECK_VERSION(2, 31, 0)
     g_thread_init(NULL);
+#endif
+
+#ifndef WIN32
+    /* init multithreading support for libevent.because struct event_base is not thread safe. */
+    evthread_use_pthreads();
 #endif
 
     if (!debug_str)
